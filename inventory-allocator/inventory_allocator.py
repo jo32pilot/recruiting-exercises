@@ -1,180 +1,176 @@
-# priorities
-# 1. shipped by least number of warehouses
-# 2. shipped by earliest warehouse
-#
-# doesn't matter if we have too much
-#
-# copy = order copy
-# for each warehouse in list
-#   for every item in order
-#       if item in warehouse
-#
-# order 7 (optimal solution = 1 + 6, careful of 4 + 6 and 1 + 4 + 2)
-# [1, 4, 2, 6, 5, 1, 3]
-#
-# only look at the direct previous solution
-#
-# (this sol doesn't take into account that there are some warehouses with none
-# of the stock we're looking for)
-#
-# list_ind = 0
-# dp[1] = 0
-# for i = 2 ... order + 1: # assuming exclusive upper bound
-#     if wh[list_ind] >= i:
-#         dp[i] = list_ind
-#         continue
-#     else:
-#         list_ind += 1
-#
-#     if wh[list_ind] >= i:
-#         dp[i] = list_ind
-#     else:
-#         dp[i] = dp[i - 1].append(list_ind)
-#
-# order 1: solution = 0
-# order 2: solution = 1
-# order 3: solution = 1
-# order 4: solution = 1
-# order 5: solution = dp[4] + dp[5 - 4] (list combine)
-# order 6: solution = dp
-#
-#
-# order 7
-# [1]: (-1, 1)
-# [1, 4]: (-1, 5)
-# [1, 4, 2]: ((0, 1, 2), 7)
-# [1, 4, 2, 6]: 
-#
-# how about this: we have and n * m solution where n is the order number and m
-# is the number of warehouses
-#
-# for i to n, go through list, compute solution for i
-#
-# order 1: solution = 0
-# order 2: solution = 1
-# order 3: solution = 1
-# order 4: solution = 1
-# order 5: solution = 4
-# order 6: solution = 4
-# order 7: solution = dp[6], dp[1]
-# order 8: solution = (dp[7]: dp[6], dp[1]) , d
-#
+"""File containing the inventory allocater function, allocate()."""
 
-def backtrack(order, tot, idx, ind, solutions, wh):
+def _backtrack(order, tot, idx, ind, solutions, wh):
+    """Backtracking helper function that gathers possible shipments.
 
+    This function takes in the amount of an item ordered and a list of stock of
+    the item for every warehouse, and recursively gathers all possible subsets
+    of indices from the list of stock such that the sum of the elements at those
+    indices are at least the ordered amount, the that last index
+    added is that of the element that made the total at least the ordered
+    amount, and the indices are in increasing order.
+
+    Example: Let's say we ordered 2 apples and had 3 warehouses whose apple
+             stock were [1, 1, 2]
+
+             Then the returned list of indices would be [[0, 1], [1, 2], [2]].
+             [0, 2] is not included because while collecting [0, 1], we
+             found that the elements at the indices [0, 1] sum to the ordered
+             amount, Therefore we do not need to consider any other cases
+             [0, i], as [0, 1] comes earlier than other indices.
+
+    Args:
+        order (int): The amount ordered for a particular item.
+        tot (int): The current sum across the current subset of indices.
+        idx (int): The current index in the passed in list of stock to start
+                   considering to add to our current subset.
+        ind (list): The current subset of indices.
+        solutions (list): The list of subsets.
+        wh (list): The list of stock of the item for every warehouse.
+    """
+
+    # Don't go out of bound.
     if idx >= len(wh):
         return
 
-    if wh[idx] != 0:
-        tot = tot + wh[idx]
-        ind.append(idx)
+    for i in range(idx, len(wh)):
 
-        if tot >= order:
-            solutions.append(list(ind))
+        # Don't consider any warehouses that don't have the item in stock.
+        if wh[i] != 0:
+
+            # Add the current warehouse's stock and update indices list.
+            new_tot = tot + wh[i]
+            ind.append(i)
+
+            # If we've reached the order amount.
+            if new_tot >= order:
+
+                # Add this subset.
+                solutions.append(list(ind))
+                del ind[-1]
+
+                # Don't need to consider any other indices at this level of
+                # recursion. The current index comes earlier than the following
+                # and therefore is more optimal.
+                return
+
+            _backtrack(order, new_tot, i + 1, ind, solutions, wh)
+
+            # Remove the recently added index so we can try a subset
+            # starting with the next index instead.
             del ind[-1]
-            return
-
-    for i in range(idx + 1, len(wh)):
-        backtrack(order, tot, i, ind, solutions, wh)
    
-    if wh[idx] != 0:
-        del ind[-1]
+def _combine_sets(item_idx, curr_set, item_solutions, final_solutions):
+    """Recursively generates all possible combinations of the passed in sets.
 
-def combine_sets(item_idx, curr_set, item_solutions, final_solutions):
-    
+    This function takes in a list of lists of sets. Each set in each list
+    of sets will be unioned with another set from every other list of sets.
+
+    Example: Given the following list:
+             [
+                [{1, 2}, {3, 4}],
+                [{2, 3}, {4, 5}],
+                [{3, 4}, {5, 6}]
+             ]
+
+             The function will generate the following list:
+             [
+                {1, 2, 3, 4},       # {1, 2} | {2, 3} | {3, 4}
+                {1, 2, 3, 5, 6},    # {1, 2} | {2, 3} | {5, 6}
+                {1, 2, 3, 4, 5},    # {1, 2} | {4, 5} | {3, 4}
+                {1, 2, 4, 5, 6},    # {1, 2} | {4, 5} | {5, 6}
+                {2, 3, 4},          # {3, 4} | {2, 3} | {3, 4}
+                {2, 3, 4, 5, 6},    # {3, 4} | {2, 3} | {5, 6}
+                {3, 4, 5},          # {3, 4} | {4, 5} | {3, 4}
+                {3, 4, 5, 6}        # {3, 4} | {4, 5} | {5, 6}
+            ]
+
+    Args:
+        item_idx (int): The index of our current list of sets we are taking a
+                        set from and unioning to our current result set.
+        curr_set (set): Our current result set.
+        item_solutions (list): Our list of unioned sets.
+        final_solutions (list): Our list of lists of sets to union.
+    """
+
+    # If we've recursed pass the last list of sets, then add the current result
+    # to our results list.
     if item_idx == len(item_solutions):
         final_solutions.append(curr_set)
         return
 
     for item_sol in item_solutions[item_idx]:
         combined = curr_set | set(item_sol)
-        combine_sets(item_idx + 1, combined, item_solutions, final_solutions)
+        _combine_sets(item_idx + 1, combined, item_solutions, final_solutions)
         
 
 def allocate(order, warehouses):
+    """Computes the optimal list of warehouses to ship an order.
+
+    The optimal shipment is the cheapest shipment. A shipment is cheap
+    if:
+        1. The fewest number of warehouses are used.
+        2. The closest warehouses are used.
+
+    The passed in list of warehouses is sorted from closest to farthest.
+
+    Args:
+        order (dict): Mapping of items ordered to the amount ordered.
+        warehouses (list): List of warehouses represented by dictionaries
+                           containing the name of the warehouse and their
+                           inventory.
+    """
+
+    # First compute the possible shipments for each individual item in
+    # the order.
     item_solutions = []
     for item, count in order.items():
+
+        # For the current item, gather the stock of the item in every warehouse.
         item_inventory = [wh['inventory'].get(item, 0) for wh in warehouses]
         item_sol = []
-        backtrack(count, 0, 0, [], item_sol, item_inventory)
+
+        # Compute the possible shipments for the current item.
+        _backtrack(count, 0, 0, [], item_sol, item_inventory)
         item_solutions.append(list(item_sol))
 
+    # Second, generate all possible shipments by combining
+    # possible individual item solutions created from the previous step.
     final_solutions = []
-    combine_sets(0, set(), item_solutions, final_solutions)
+    _combine_sets(0, set(), item_solutions, final_solutions)
+
+    # Third, among the possible shipments, find that which uses the least
+    # number of warehouses, and comes earliest in the list of shipments.
     solution_ind = final_solutions[0] if final_solutions else None
     for sol in final_solutions:
         solution_ind = sol if len(sol) < len(solution_ind) else solution_ind
 
-    return list(map(lambda i: warehouses[i], solution_ind)) if solution_ind \
+    # What we have is a list of indices of warehouses. Here we get a list
+    # of the warehouses themselves.
+    res = list(map(lambda i: warehouses[i], solution_ind)) if solution_ind \
             else []
 
-# [1, 4, 2, 6, 5, 1, 3]
-order = {
-    'apple': 7,
-    'orange': 1,
-    'banana': 4
-}
+    # Finally, compute the number of items to be delivered from each warehouse.
+    for warehouse in res:
+        for item in order.keys():
+            wh_stock = warehouse['inventory'].get(item, -1)
 
-warehouses = [ 
-    { 
-        'name': 'owd', 
-        'inventory': { 
-            'apple': 1, 
-            'orange': 1, 
-        } 
-    }, 
-    { 
-        'name': 'dm', 
-        'inventory': { 
-            'banana': 2, 
-            'orange': 2,
-        } 
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple':4,
-            'orange': 3
-            
-        }
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple':2
+            # If we've already fulfilled our order for the current item,
+            # we don't need to deliver any of the current item from this
+            # warehouse.
+            if order[item] == 0 and wh_stock >= 0:
+                del warehouse['inventory'][item]
 
-            
-        }
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple': 6,
-            'banana': 4
-            
-        }
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple': 5
-            
-        }
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple': 1
-            
-        }
-    },
-    {
-        'name': 'wh',
-        'inventory':{
-            'apple': 3
-            
-        }
-    },
-]
+            # If this warehouse fulfills our order for the current item...
+            elif wh_stock >= order[item]:
 
-print(allocate(order, warehouses))
+                # Assign this warehouse to deliver the remaining amount needed
+                # of the current item.
+                warehouse['inventory'][item] = order[item]
+                order[item] = 0
+
+            # Otherwise, we need more of the current item.
+            # If this warehouse contains stock for our current item...
+            elif wh_stock > 0:
+                order[item] -= wh_stock
+    return res
